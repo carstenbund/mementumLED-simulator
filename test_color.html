@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>mementumLED</title>
+  <style>
+    body {
+      font-family: sans-serif;
+      color: #fff;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 100vh;
+      margin: 0;
+      background-color: #202020;
+    }
+    label{
+      color: #fff;
+      margin: 20px;
+      text-align: right;
+    }
+
+    .ticker-container {
+      margin: 1rem;
+      display: inline-block;
+      vertical-align: top;
+      text-align: right;
+    }
+    canvas {
+      background-color: black;
+      display: block;
+      margin-top: 0.5rem;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Ticker #1 -->
+  <div class="ticker-container"
+       data-width="180"
+       data-height="180"
+       data-scroll-speed="100">
+    <label>Matrix LED #1 (8x8):</label>
+    <input type="text" class="ticker-input" value="@redH@blueELLO">
+  </div>
+
+  <!-- Ticker #2 -->
+  <div class="ticker-container"
+       data-width="480"
+       data-height="160"
+       data-scroll-speed="100">
+    <label>Matrix LED #2 (24x8):</label>
+    <input type="text" class="ticker-input" value="@red>> @purplemementum LED @red<<">
+  </div>
+
+  <script src="5x7font.js"></script>
+  <script>
+  (function() {
+    // 5x7 Bitmap font (add characters as needed)
+    /**
+     * Creates a ticker in the given container.
+     * Returns an object with a `.setText(newText)` method to update.
+     */
+    function createTicker(container) {
+      // Read data attributes
+      const font_color = "#f0f";
+      const canvasWidth = parseInt(container.getAttribute("data-width") || "640", 10);
+      const canvasHeight = parseInt(container.getAttribute("data-height") || "160", 10);
+      const scrollSpeed = parseInt(container.getAttribute("data-scroll-speed") || "100", 10);
+
+      // Create canvas and attach
+      const canvas = document.createElement("canvas");
+      canvas.width = canvasWidth;
+      canvas.height = canvasHeight;
+      container.appendChild(canvas);
+
+      const ctx = canvas.getContext("2d");
+
+      // Grid definitions (assuming 20px cell size)
+      const CELL_SIZE = 20;
+      const GRID_WIDTH = canvasWidth / CELL_SIZE;
+      const GRID_HEIGHT = canvasHeight / CELL_SIZE;
+
+      // Full bitmap buffer for the text
+      let buffer = [];
+      let currentOffset = 0;
+      let scrollText = "";  // We'll set this via .setText(...)
+
+      const colorMap = {
+        "@red": "#ff0000",
+        "@green": "#00ff00",
+        "@blue": "#0000ff",
+        "@pink": "#ff69b4",
+        "@purple":"#f0f",
+        "@yellow": "#ffff00",
+        "@cyan": "#00ffff",
+      };
+
+      // Convert the text into the bitmap buffer
+      function initBuffer() {
+        buffer = [];
+        let upperText = scrollText;  // Preserve original case
+        
+        let currentColor = font_color; // Default color
+        
+        while (upperText.length > 0) {
+          let foundColor = null;
+          
+          // Check if the text starts with a color prefix
+          for (const key in colorMap) {
+            if (upperText.startsWith(key)) {
+              currentColor = colorMap[key]; // Set new color
+              foundColor = key;
+              break;
+            }
+          }
+          
+          // If a color prefix is found, remove it and continue
+          if (foundColor) {
+            upperText = upperText.substring(foundColor.length);
+            continue;
+          }
+          
+          // Process the next character in the text
+          let ch = upperText[0];
+          upperText = upperText.substring(1);
+          
+          if (FONT[ch]) {
+            const charBitmap = FONT[ch];
+            
+            // Convert 5 wide x 7 tall bitmap
+            for (let col = 0; col < 5; col++) {
+              let column = 0;
+              for (let row = 0; row < 7; row++) {
+                if (charBitmap[row] & (1 << (4 - col))) {
+                  column |= (1 << row);
+                }
+              }
+              buffer.push({ column, color: currentColor }); // Store color with column
+            }
+            
+            buffer.push({ column: 0, color: currentColor }); // Add spacing
+          }
+        }
+        
+        // Reset offset to start scrolling from the right
+        currentOffset = -GRID_WIDTH;
+      }
+
+      // Clear the canvas
+      function clearCanvas() {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+      }
+
+      function drawMatrix() {
+        clearCanvas();
+        
+        for (let x = 0; x < GRID_WIDTH; x++) {
+          const bufferIndex = x + currentOffset;
+          if (bufferIndex >= 0 && bufferIndex < buffer.length) {
+            const { column, color } = buffer[bufferIndex]; // Extract color data
+            ctx.fillStyle = color; // Apply color
+            
+            for (let y = 0; y < GRID_HEIGHT; y++) {
+              if (column & (1 << y)) {
+                ctx.fillRect(x * CELL_SIZE, y * CELL_SIZE, CELL_SIZE, CELL_SIZE);
+              }
+            }
+          }
+        }
+      }
+
+      // Scroll the text
+      function scroll() {
+        currentOffset++;
+        console.log(currentOffset);
+        // Once passed the left boundary, reset
+        if (currentOffset > buffer.length) {
+          currentOffset = - GRID_WIDTH;
+          console.log("reset "+ currentOffset);
+        }
+        drawMatrix();
+      }
+
+      // Start the interval
+      function startTicker() {
+        setInterval(scroll, scrollSpeed);
+      }
+
+      // Exposed method to change text
+      function setText(newText) {
+        scrollText = newText;
+        initBuffer();  // Rebuild buffer and reset offset
+      }
+
+      // Initialize
+      setText("ABC"); // or a default text
+      startTicker();
+
+      // Return an API for external usage
+      return { setText };
+    }
+
+    // Find all containers
+    const containers = document.querySelectorAll(".ticker-container");
+    containers.forEach(container => {
+      // Create a ticker inside each container
+      const ticker = createTicker(container);
+
+      // Look for an <input class="ticker-input"> to capture text changes
+      const input = container.querySelector(".ticker-input");
+      if (input) {
+        // Set initial text to the input's value
+        ticker.setText(input.value);
+
+        // Update ticker whenever the input changes
+        input.addEventListener("input", () => {
+          ticker.setText(input.value);
+        });
+      }
+    });
+  })();
+  </script>
+</body>
+</html>
